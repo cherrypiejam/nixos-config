@@ -9,20 +9,26 @@
     ref = "master";
   }) {};
   my-emacs = import /etc/nixos/emacs.nix { inherit pkgs; };
+  tree-sitter-lang-with-abi-13 = (p: {
+    nativeBuildInputs = [ p.nodejs p.tree-sitter ];
+    configurePhase = ''
+        tree-sitter generate --abi 13 src/grammar.json
+    '';
+  });
   tree-sitter-overlay = (self: super: {
     tree-sitter-grammars = super.tree-sitter-grammars // {
-      tree-sitter-c = super.tree-sitter-grammars.tree-sitter-c.overrideAttrs (_: {
-        nativeBuildInputs = [ self.nodejs self.tree-sitter ];
-        configurePhase = ''
-          tree-sitter generate --abi 13 src/grammar.json
-        '';
-      });
-      tree-sitter-rust = super.tree-sitter-grammars.tree-sitter-rust.overrideAttrs (_: {
-        nativeBuildInputs = [ self.nodejs self.tree-sitter ];
-        configurePhase = ''
-          tree-sitter generate --abi 13 src/grammar.json
-        '';
-      });
+      tree-sitter-c = super.tree-sitter-grammars.tree-sitter-c.overrideAttrs (_:
+        tree-sitter-lang-with-abi-13 self
+      );
+      tree-sitter-rust = super.tree-sitter-grammars.tree-sitter-rust.overrideAttrs (_:
+        tree-sitter-lang-with-abi-13 self
+      );
+      tree-sitter-scala = super.tree-sitter-grammars.tree-sitter-scala.overrideAttrs (_:
+        tree-sitter-lang-with-abi-13 self
+      );
+      tree-sitter-python = super.tree-sitter-grammars.tree-sitter-python.overrideAttrs (_:
+        tree-sitter-lang-with-abi-13 self
+      );
     };
   });
 in {
@@ -34,8 +40,6 @@ in {
   nixpkgs = {
     config.allowUnfreePredicate = pkg:
       builtins.elem (lib.getName pkg) [
-        "dropbox"
-        "dropbox-cli"
       ];
     overlays = [
       nur-no-pkgs.repos.cherrypiejam.overlays.wpa-supplicant-sslv3-trust-me
@@ -115,7 +119,7 @@ in {
     touchpad.naturalScrolling = true;
     touchpad.tapping = true;
     touchpad.disableWhileTyping = true;
-    touchpad.accelProfile = "flat";
+    touchpad.accelProfile = "adaptive";
     touchpad.accelSpeed = "0.9";
   };
 
@@ -153,7 +157,7 @@ in {
   };
 
   # Enable fingerprint reader
-  # services.fprintd.enable = true;
+  services.fprintd.enable = true;
 
   # Enable multi-display
   services.autorandr.enable = true;
@@ -171,25 +175,6 @@ in {
 
   # Enable mail synchronizer
   services.offlineimap.enable = true;
-
-  # Dropbox
-  systemd.user.services.dropbox = {
-    description = "Dropbox";
-    wantedBy = [ "graphical-session.target" ];
-    environment = {
-      QT_PLUGIN_PATH = "/run/current-system/sw/" + pkgs.qt5.qtbase.qtPluginPrefix;
-      QML2_IMPORT_PATH = "/run/current-system/sw/" + pkgs.qt5.qtbase.qtQmlPrefix;
-    };
-    serviceConfig = {
-      ExecStart = "${lib.getBin pkgs.dropbox}/bin/dropbox";
-      ExecReload = "${lib.getBin pkgs.coreutils}/bin/kill -HUP $MAINPID";
-      KillMode = "control-group"; # upstream recommends process
-      Restart = "on-failure";
-      PrivateTmp = true;
-      ProtectSystem = "full";
-      Nice = 10;
-    };
-  };
 
   # Dictionary
   services.dictd = {
@@ -210,6 +195,7 @@ in {
     tmux
     gitAndTools.gitFull
     gcc
+    gdb
     cmake
     gnumake
     libtool
@@ -224,13 +210,18 @@ in {
     pavucontrol
     acpi
     qemu
-    dropbox-cli
     pass
     notmuch
     notmuch.emacs
-    nil # nix language server
+    # Language-specifics
+    nil
     rustup
     ccls
+    scala
+    metals
+    (python3.withPackages (p: with p; [
+      python-lsp-server
+    ]))
   ]);
 
   users.mutableUsers = false;
@@ -249,6 +240,7 @@ in {
       nyxt
       ispell
       htop
+      gtkwave
     ];
   };
 

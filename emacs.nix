@@ -31,11 +31,13 @@ in
     beacon
     which-key
     eldoc-box
+    org-bullets
+    pdf-tools
     nix-mode
     rust-mode
     markdown-mode
-    org-bullets
-    pdf-tools
+    scala-mode
+    evil-org
   ])
   ++ (with epkgs.melpaPackages; [
     vterm

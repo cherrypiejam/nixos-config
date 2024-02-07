@@ -1,6 +1,6 @@
 ;; Set default font
-(set-frame-font "Hack Nerd Font-10" nil t)
-(setq default-frame-alist '((font . "Hack Nerd Font-10")))
+(set-frame-font "Hack Nerd Font-9" nil t)
+(setq default-frame-alist '((font . "Hack Nerd Font-9")))
 (tooltip-mode -1)
 
 ;; Make more room
@@ -41,6 +41,10 @@
 (require 'uniquify)
 (setq uniquify-buffer-name-style 'forward)
 
+;; Enable auto pair
+(require 'electric)
+(electric-pair-mode)
+
 ;; Only use packages from Nixpkgs
 (setq package-archives nil)
 ;; Setup package.el to work with MELPA
@@ -75,11 +79,13 @@
   (evil-collection-init
    '(vterm
      company
-     org
      xref
+     org
      eldoc
      (pdf pdf-view)
-     dired)))
+     dired
+     notmuch
+     (magit magit-repos magit-submodule))))
 
 ;; Theme
 (use-package doom-themes
@@ -91,11 +97,6 @@
   (load-theme 'doom-palenight t)
   ;; Enable flashing mode-line on errors
   (doom-themes-visual-bell-config)
-  ;; Enable custom neotree theme (all-the-icons must be installed)
-  ;;(doom-themes-neotree-config)
-  ;; or for treemacs users
-  ;;(setq doom-themes-treemacs-theme "doom-atom")
-  ;;(doom-theme-treemacs-config)
   ;; Corrects (and improves) org-mode's native fontification
   (doom-themes-org-config)
   (set-face-foreground 'mode-line "black")
@@ -187,8 +188,6 @@
               (if (string= exwm-class-name "firefox") (evil-emacs-state))))
   ;; Workspace
   (setq exwm-workspace-warp-cursor t)
-  ;; (setq mouse-autoselect-window t
-  ;;       focus-follows-mouse t)
   (setq exwm-workspace-show-all-buffers t
         exwm-layout-show-all-buffers t)
   ;; Multi-displays
@@ -206,7 +205,7 @@
           (wrapper/scoped-run "blueman-applet")))
   ;; Enable the system tray
   (require 'exwm-systemtray)
-  (setq exwm-systemtray-height 26) ;; default 22
+  (setq exwm-systemtray-height 24) ;; default 22
   (exwm-systemtray-enable)
   ;; Using xim input
   ;; (require 'exwm-xim)
@@ -217,7 +216,7 @@
 
 (use-package exwm-outer-gaps
   :config
-  (exwm-outer-gaps-set-all 15 nil)
+  (exwm-outer-gaps-set-all 20 nil)
   ;; Disable by default
   (exwm-outer-gaps-mode -1))
 
@@ -271,7 +270,7 @@
 ;; LSP support
 (use-package eglot
   :hook
-  ((nix-mode rust-mode c-mode)
+  ((nix-mode rust-mode c-mode scala-mode)
    . eglot-ensure)
   :config
   (add-to-list 'eglot-server-programs '(nix-mode . ("nil")))
@@ -282,7 +281,7 @@
     "gD" 'xref-find-definitions-other-window
     "g5" 'xref-find-definitions-other-frame
     (kbd "C-t") 'xref-pop-marker-stack
-    "gr" 'xref-find-reeerences))
+    "gr" 'xref-find-references))
 
 (use-package eldoc-box
   :config
@@ -313,6 +312,11 @@
   :mode ("README\\.md\\'" . gfm-mode)
   :init (setq markdown-command "multimarkdown"))
 
+;; Scala mode
+(use-package scala-mode
+  :mode "\\.scala\\'"
+  :interpreter "scala")
+
 ;; Org mode
 (use-package org
   :mode ("\\.org\\'" . org-mode)
@@ -321,7 +325,21 @@
   :config
   (require 'org-bullets)
   (setq org-pretty-entities t)
-  (setq org-pretty-entities-include-sub-superscripts t))
+  (setq org-pretty-entities-include-sub-superscripts t)
+  (setq org-agenda-files '("~/org")))
+
+;; (use-package evil-org
+;;   :after org
+;;   :hook (org-mode . (lambda () evil-org-mode))
+;;   :config
+;;   (require 'evil-org-agenda)
+;;   (evil-org-agenda-set-keys)
+;;   (evil-set-initial-state 'org-agenda-mode 'motion))
+
+;; Key finding
+(use-package which-key
+  :config
+  (which-key-mode))
 
 ;; GPG pinentry
 ;; let's get encryption established
@@ -339,13 +357,13 @@
   (require 'org-crypt)
   (org-crypt-use-before-save-magic))
 
-;; Email index
-;; (use-package notmuch
-;;   :demand t
-;;   :load-path
-;;   (lambda ()
-;;     (shell-command-to-string
-;;      "readlink -f \"$(which notmuch-emacs-mua)/../../share/emacs/site-lisp/\" | tr -d '\n'")))
+;; Email indexing
+(use-package notmuch
+  :demand t
+  :load-path
+  (lambda ()
+    (shell-command-to-string
+     "readlink -f \"$(which notmuch-emacs-mua)/../../share/emacs/site-lisp/\" | tr -d '\n'")))
 
 (custom-set-variables
  ;; custom-set-variables was added by Custom.

@@ -9,6 +9,10 @@
 (tool-bar-mode -1)
 (fringe-mode 1)
 
+;; Mode bar utils
+(display-battery-mode)
+(display-time-mode)
+
 ;; TODO
 (setq gc-cons-threshold 100000000) ; 100 mb
 (setq read-process-output-max (* 1024 1024)) ; 1mb
@@ -85,6 +89,7 @@
      (pdf pdf-view)
      dired
      notmuch
+     calc
      (magit magit-repos magit-submodule))))
 
 ;; Theme
@@ -220,6 +225,12 @@
   ;; Disable by default
   (exwm-outer-gaps-mode -1))
 
+(use-package exwm-firefox
+  :demand t
+  :config
+  (advice-add 'exwm-firefox--setup-hook :override (lambda () ()))
+  (exwm-firefox-mode))
+
 ;; VTerm
 (use-package vterm
   :ensure t
@@ -232,6 +243,8 @@
   ;; :bind
   ;; (("s-v" . nterm))
   :config
+  ;; Increase maximum scrollback value
+  (setq vterm-max-scrollback 3000)
   ;; Additional bindings
   (evil-define-key '(normal insert) 'vterm-mode-map
     (kbd "C-c C-q") 'vterm-send-next-key)
@@ -270,6 +283,7 @@
 ;; LSP support
 (use-package eglot
   :hook
+  ;; ((nix-mode c-mode) . eglot-ensure)
   ((nix-mode rust-mode c-mode scala-mode)
    . eglot-ensure)
   :config
@@ -328,6 +342,15 @@
   (setq org-pretty-entities-include-sub-superscripts t)
   (setq org-agenda-files '("~/org")))
 
+(use-package org-babel
+  :no-require
+  :config
+  (org-babel-do-load-languages
+   'org-babel-load-languages
+   '((C      . t)
+     (python . t)
+     (emacs-lisp . t))))
+
 ;; (use-package evil-org
 ;;   :after org
 ;;   :hook (org-mode . (lambda () evil-org-mode))
@@ -339,7 +362,7 @@
 ;; Key finding
 (use-package which-key
   :config
-  (which-key-mode))
+  (which-key-mode -1))
 
 ;; GPG pinentry
 ;; let's get encryption established
@@ -371,7 +394,8 @@
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(auth-source-save-behavior nil)
- '(package-selected-packages '(doom-themes exwm vterm use-package evil)))
+ '(package-selected-packages '(doom-themes exwm vterm use-package evil))
+ '(warning-suppress-log-types '(((undo discard-info)))))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.

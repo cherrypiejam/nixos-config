@@ -9,37 +9,49 @@
     ref = "master";
   }) {};
   my-emacs = import /etc/nixos/emacs.nix { inherit pkgs; };
-  tree-sitter-lang-with-abi-13 = (p: {
-    nativeBuildInputs = [ p.nodejs p.tree-sitter ];
-    configurePhase = ''
-        tree-sitter generate --abi 13 src/grammar.json
-    '';
-  });
   tree-sitter-overlay = (self: super: {
-    tree-sitter-grammars = super.tree-sitter-grammars // {
-      tree-sitter-c = super.tree-sitter-grammars.tree-sitter-c.overrideAttrs (_:
-        tree-sitter-lang-with-abi-13 self
-      );
-      tree-sitter-rust = super.tree-sitter-grammars.tree-sitter-rust.overrideAttrs (_:
-        tree-sitter-lang-with-abi-13 self
-      );
-      tree-sitter-scala = super.tree-sitter-grammars.tree-sitter-scala.overrideAttrs (_:
-        tree-sitter-lang-with-abi-13 self
-      );
-      tree-sitter-python = super.tree-sitter-grammars.tree-sitter-python.overrideAttrs (_:
-        tree-sitter-lang-with-abi-13 self
-      );
-    };
+    tree-sitter-grammars = super.tree-sitter-grammars // (builtins.listToAttrs (
+      builtins.map (lang:
+        let tree-sitter-lang = "tree-sitter-${lang}"; in
+        lib.nameValuePair
+          tree-sitter-lang
+          (super.tree-sitter-grammars.${tree-sitter-lang}.overrideAttrs (_: {
+            nativeBuildInputs = [ self.nodejs self.tree-sitter ];
+            configurePhase = ''
+                tree-sitter generate --abi 13 src/grammar.json
+            '';
+          }))
+      ) [ "c" "rust" "scala" "python" ]
+    ));
   });
 in {
   imports =
     [ # Include the results of the hardware scan.
       ./hardware-configuration.nix
+      ./nix-individual-machines.nix
     ];
+
+  nix = {
+    distributedBuilds = true;
+    buildMachines = [
+      {
+        hostName = "sns44.cs.princeton.edu";
+        systems  = [ "x86_64-linux" "aarch64-linux" ];
+        maxJobs  = 16;
+        sshUser  = "cherrypiejam";
+        sshKey   = "/home/cherrypie/.ssh/remote-build/builder";
+        supportedFeatures = [ "big-parallel" ];
+        speedFactor = 0;
+      }
+    ];
+  };
+
+  # Local build by default
+  # environment.etc."nix/machines".enable = true;
 
   nixpkgs = {
     config.allowUnfreePredicate = pkg:
-      builtins.elem (lib.getName pkg) [
+      builtins.elem (lib.getName pkg) [ # Unfree software go here
       ];
     overlays = [
       nur-no-pkgs.repos.cherrypiejam.overlays.wpa-supplicant-sslv3-trust-me
@@ -50,6 +62,9 @@ in {
   # Use the systemd-boot EFI boot loader.
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
+
+  # Cross-compile images
+  boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
 
   networking.hostId = "9a8f4bf9";
   networking.hostName = "cheesecake";
@@ -120,7 +135,7 @@ in {
     touchpad.tapping = true;
     touchpad.disableWhileTyping = true;
     touchpad.accelProfile = "adaptive";
-    touchpad.accelSpeed = "0.9";
+    touchpad.accelSpeed = "0.7";
   };
 
   services.emacs = {
@@ -163,7 +178,13 @@ in {
   services.autorandr.enable = true;
 
   # Enable CUPS to print documents
-  services.printing.enable = true;
+  services.printing = {
+    enable = true;
+    clientConf = ''
+      ServerName lpdrelay.cs.princeton.edu
+      User gh0477
+    '';
+  };
 
   # Enable sound
   sound.enable = true;
@@ -231,7 +252,7 @@ in {
   users.users.cherrypie = {
     isNormalUser = true;
     uid = 1000;
-    extraGroups = [ "wheel" "audio" "networkmanager" "tty" "dialout" "libvirtd" "tss" ];
+    extraGroups = [ "wheel" "audio" "networkmanager" "tty" "dialout" "libvirtd" "tss" "docker" ];
     hashedPassword =
       "";
     shell = pkgs.fish;
@@ -243,6 +264,8 @@ in {
       gtkwave
     ];
   };
+
+  virtualisation.docker.enable = true;
 
   # Fall-back emacs daemon
   # systemd.user.services.emacs = {
@@ -267,6 +290,7 @@ in {
     shellAliases = {
       locknow = "xautolock -locknow";
       ed = "emacseditor";
+      isnixshell = "echo $IN_NIX_SHELL";
     };
     shellInit = ''
     '';
@@ -280,8 +304,8 @@ in {
   # Enable firewall and open ports.
   networking.firewall = {
     enable = true;
-    allowedTCPPorts = [ 17500 ];
-    allowedUDPPorts = [ 17500 ];
+    # allowedTCPPorts = [ 17500 ];
+    # allowedUDPPorts = [ 17500 ];
   };
 
   # Copy the NixOS configuration file and link it from the resulting system

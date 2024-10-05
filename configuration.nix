@@ -8,7 +8,6 @@
     rev = "0f3c510de06615a8cf9a2ad3b77758bb9d155753";
     ref = "master";
   }) {};
-  my-emacs = import /etc/nixos/emacs.nix { inherit pkgs; };
   tree-sitter-overlay = (self: super: {
     tree-sitter-grammars = super.tree-sitter-grammars // (builtins.listToAttrs (
       builtins.map (lang:
@@ -24,6 +23,12 @@
       ) [ "c" "rust" "scala" "python" ]
     ));
   });
+  emacs-overlay = import (builtins.fetchGit {
+    url = "https://github.com/nix-community/emacs-overlay";
+    rev = "ab15d82f94c8f6373fec1f363c5b6c631453950b";
+    ref = "master";
+  });
+  my-emacs = pkgs.callPackage ./emacs.nix {};
 in {
   imports =
     [ # Include the results of the hardware scan.
@@ -34,14 +39,21 @@ in {
   nix = {
     distributedBuilds = true;
     buildMachines = [
-      {
-        hostName = "sns44.cs.princeton.edu";
+      { hostName = "sns44";
         systems  = [ "x86_64-linux" "aarch64-linux" ];
         maxJobs  = 16;
         sshUser  = "cherrypiejam";
         sshKey   = "/home/cherrypie/.ssh/remote-build/builder";
         supportedFeatures = [ "big-parallel" ];
-        speedFactor = 0;
+        speedFactor = 3;
+      }
+      { hostName = "mooncake-builder";
+        systems  = [ "x86_64-linux" ];
+        maxJobs  = 16;
+        sshUser  = "nixremote";
+        sshKey   = "/home/cherrypie/.ssh/remote-build/builder";
+        supportedFeatures = [ "big-parallel" ];
+        speedFactor = 1;
       }
     ];
   };
@@ -52,16 +64,22 @@ in {
   nixpkgs = {
     config.allowUnfreePredicate = pkg:
       builtins.elem (lib.getName pkg) [ # Unfree software go here
+        "corefonts"
+        "hplip"
       ];
     overlays = [
       nur-no-pkgs.repos.cherrypiejam.overlays.wpa-supplicant-sslv3-trust-me
       tree-sitter-overlay
+      # emacs-overlay
     ];
   };
 
   # Use the systemd-boot EFI boot loader.
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
+
+  # Kernel version
+  boot.kernelPackages = pkgs.linuxPackages_6_8;
 
   # Cross-compile images
   boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
@@ -80,9 +98,13 @@ in {
   time.timeZone = "America/New_York";
 
   # Set font packages.
-  fonts.packages = with pkgs; [
-    (nerdfonts.override { fonts = [ "Hack" ]; })
-  ];
+  fonts = {
+    packages = with pkgs; [
+      (nerdfonts.override { fonts = [ "Hack" ]; })
+      noto-fonts-cjk
+      # corefonts
+    ];
+  };
 
   # Configure network proxy if necessary
   # networking.proxy.default = "http://user:password@proxy:port/";
@@ -99,27 +121,29 @@ in {
   # Enable the X11 windowing system.
   services.xserver.enable = true;
   services.xserver.dpi = 128;
-  services.xserver.layout = "us";
-  services.xserver.xkbOptions = "ctrl:swapcaps";
+  services.xserver.xkb.layout = "us";
+  services.xserver.xkb.options = "ctrl:swapcaps";
   services.xserver.desktopManager.gnome.enable = true;
 
   services.xserver.displayManager = {
     lightdm.enable = true;
     lightdm.background =
-      "/var/state/background";
-      # pkgs.nixos-artwork.wallpapers.nineish-dark-gray.gnomeFilePath;
+      # "/var/state/background";
+      pkgs.nixos-artwork.wallpapers.nineish-dark-gray.gnomeFilePath;
     lightdm.greeters.gtk.extraConfig = ''
       hide-user-image=true
-      [monitor: eDP-1]
-      background=/var/state/background
     '';
-    defaultSession = "none+exwm";
+    #   [monitor: eDP-1]
+    #   background=/var/state/background
+    # '';
   };
+
+  services.displayManager.defaultSession = "none+exwm";
 
   services.xserver.windowManager.session = lib.singleton {
     name = "exwm";
     start = ''
-      for i in $(seq 100); do
+      for i in $(seq 300); do
         if [ "$(systemctl --user is-active emacs.service)" = "active" ]; then
           break
         fi
@@ -129,13 +153,15 @@ in {
     '';
   };
 
-  services.xserver.libinput = {
+  services.libinput = {
     enable = true;
-    touchpad.naturalScrolling = true;
-    touchpad.tapping = true;
-    touchpad.disableWhileTyping = true;
-    touchpad.accelProfile = "adaptive";
-    touchpad.accelSpeed = "0.7";
+    touchpad = {
+      naturalScrolling = true;
+      tapping = true;
+      disableWhileTyping = true;
+      accelProfile = "adaptive";
+      accelSpeed = "0.7";
+    };
   };
 
   services.emacs = {
@@ -148,6 +174,9 @@ in {
     powerKey = "ignore";
     lidSwitch = "ignore";
   };
+
+  # Device firmware update
+  services.fwupd.enable = true;
 
   services.acpid = {
     enable = true;
@@ -180,22 +209,35 @@ in {
   # Enable CUPS to print documents
   services.printing = {
     enable = true;
-    clientConf = ''
-      ServerName lpdrelay.cs.princeton.edu
-      User gh0477
-    '';
+    drivers = with pkgs; [ hplipWithPlugin ];
+    # clientConf = ''
+    #   ServerName lpdrelay.cs.princeton.edu
+    #   User gh0477
+    # '';
   };
 
   # Enable sound
   sound.enable = true;
-  hardware.pulseaudio.enable = true;
+  hardware.pulseaudio = {
+    enable = true;
+    package = pkgs.pulseaudioFull;
+  };
 
   # Enable bluetooth
   services.blueman.enable = true;
-  hardware.bluetooth.enable = true;
+  hardware.bluetooth = {
+    enable = true;
+    settings.General = {
+      Enable = "Source,Sink,Media,Socket";
+      Disable = "Headset";
+    };
+  };
 
   # Enable mail synchronizer
-  services.offlineimap.enable = true;
+  services.offlineimap = {
+    enable = true;
+    path = with pkgs; [ bash notmuch ];
+  };
 
   # Dictionary
   services.dictd = {
@@ -204,7 +246,7 @@ in {
   };
 
   # Enable the OpenSSH daemon.
-  # services.openssh.enable = true;
+  services.openssh.enable = false;
 
   # List packages installed in system profile. To search, run:
   # $ nix search wget
@@ -222,6 +264,14 @@ in {
     libtool
     firefox
     file
+    qemu
+    pass
+    gnutls
+    notmuch
+    notmuch.emacs
+    zip
+    unzip
+    # Service essentials
     networkmanagerapplet
     arandr
     autorandr
@@ -230,10 +280,6 @@ in {
     brightnessctl
     pavucontrol
     acpi
-    qemu
-    pass
-    notmuch
-    notmuch.emacs
     # Language-specifics
     nil
     rustup
@@ -243,6 +289,10 @@ in {
     (python3.withPackages (p: with p; [
       python-lsp-server
     ]))
+    # Tools
+    usbutils
+    flameshot
+    mplayer
   ]);
 
   users.mutableUsers = false;
@@ -252,7 +302,10 @@ in {
   users.users.cherrypie = {
     isNormalUser = true;
     uid = 1000;
-    extraGroups = [ "wheel" "audio" "networkmanager" "tty" "dialout" "libvirtd" "tss" "docker" ];
+    extraGroups = [ "wheel" "audio" "networkmanager" "tty" "dialout" "libvirtd" "tss" "docker"
+                    "lp" # HP printer
+                    "usbmuxd"
+                  ];
     hashedPassword =
       "";
     shell = pkgs.fish;
@@ -262,10 +315,18 @@ in {
       ispell
       htop
       gtkwave
+      texliveFull
     ];
   };
 
   virtualisation.docker.enable = true;
+
+  # Enable virtual box
+  # virtualisation.virtualbox.host.enable = true;
+  # virtualisation.virtualbox.host.enableExtensionPack = true; # Requires unfree
+  # virtualisation.virtualbox.guest.enable = true;
+  # virtualisation.virtualbox.guest.x11 = true;
+  # users.extraGroups.vboxusers.members = [ "user-with-access-to-virtualbox" ];
 
   # Fall-back emacs daemon
   # systemd.user.services.emacs = {
@@ -279,8 +340,16 @@ in {
   #   wantedBy = [ "default.target" ];
   # };
 
-  systemd.user.services.emacs.serviceConfig = {
-    Slice = "session.slice";
+  systemd.user.services.emacs = {
+    serviceConfig = {
+      Slice = "session.slice";
+    };
+    environment = {
+      XMODIFIERS = "@im=exwm-xim";
+      GTK_IM_MODULE = "xim";
+      QT_IM_MODULE = "xim";
+      CLUTTER_IM_MODULE = "xim";
+    };
   };
 
   # Some programs need SUID wrappers, can be configured further or are
@@ -295,17 +364,135 @@ in {
     shellInit = ''
     '';
   };
+
+  programs.ssh = {
+    extraConfig = ''
+      Host mooncake-builder
+           HostName mooncake.gongqi.zone
+           User nixremote
+
+      Host mooncake
+           HostName mooncake.gongqi.zone
+           User cherrypie
+
+      Host sns44
+           HostName sns44.cs.princeton.edu
+           User cherrypiejam
+    '';
+  };
+
   programs.mtr.enable = true;
+
   programs.gnupg.agent = {
     enable = true;
     # enableSSHSupport = true;
   };
 
+  programs.proxychains = {
+    enable = true;
+    package = pkgs.proxychains-ng;
+    proxies = {
+      v2ray = {
+        enable = true;
+        type = "socks5";
+        host = "127.0.0.1";
+        port = 1080;
+      };
+    };
+  };
+
   # Enable firewall and open ports.
   networking.firewall = {
     enable = true;
-    # allowedTCPPorts = [ 17500 ];
-    # allowedUDPPorts = [ 17500 ];
+    # allowedTCPPorts = [ 21 56260 ];
+    # allowedUDPPorts = [ 8771 5353 ];
+  };
+
+  # Ifuse
+  services.usbmuxd.enable = true;
+
+  # Enable FTP server
+  services.vsftpd = {
+    enable = false;
+    enableVirtualUsers = true;
+    localUsers = true;
+    userDbPath = with pkgs; "${runCommand "vfstpd-userDb" {} ''
+       mkdir $out
+       ${db}/bin/db_load -T -t hash -f logins $out/userDb.db
+    ''}/userDb";
+    localRoot = "/var/ftp";
+    writeEnable = true;
+    allowWriteableChroot = true;
+    anonymousUploadEnable = true;
+    extraConfig = ''
+      pasv_enable=Yes
+      pasv_min_port=56260
+      pasv_max_port=56260
+    '';
+  };
+
+  # Proxies
+  services.v2ray = {
+    enable = true;
+    config = {
+      routing = {
+        domainStrategy = "AsIs";
+        rules = [
+          { type = "field"; inboundTag = "line1"; outboundTag = "linode-jp-osa"; }
+          { type = "field"; inboundTag = "line2"; outboundTag = "mooncake"; }
+        ];
+      };
+      inbounds = [
+        { tag = "line1";
+          listen = "127.0.0.1";
+          port = 1080;
+          protocol = "socks";
+          sniffing = { enabled = false; destOverride = [ "http" "tls" ]; };
+          settings = { auth = "noauth"; };
+        }
+        { tag = "line2";
+          listen = "127.0.0.1";
+          port = 1081;
+          protocol = "socks";
+          settings = { auth = "noauth"; };
+        }
+      ];
+      outbounds = [
+        { tag = "linode-jp-osa";
+          protocol = "vmess";
+          settings = {
+            vnext = [{
+              address = "172.233.90.206";
+              port = 39985;
+              users = [{ id = "1f99d0dd-f358-4409-9183-42e4715e5581"; }];
+            }];
+          };
+        }
+        { tag = "mooncake";
+          protocol = "vmess";
+          settings = {
+            vnext = [{
+              address = "mooncake.gongqi.zone";
+              port = 2222;
+              users = [{ id = "24199d86-0777-4d3c-bc1b-2179ebf60bd4"; }];
+            }];
+          };
+          streamSettings = {
+            network = "ws";
+            wsSettings = {
+              path = "/enl/";
+              headers.host = "mooncake.gongqi.zone";
+            };
+            security = "tls";
+            tlsSettings = {
+              serverName = "mooncake.gongqi.zone";
+              allowInsecure = true; # allow self-signed certs
+              alpn = [ "http/1.1" ];
+            };
+          };
+        }
+      ];
+    };
   };
 
   # Copy the NixOS configuration file and link it from the resulting system
@@ -333,4 +520,3 @@ in {
   system.stateVersion = "23.05"; # Did you read the comment?
 
 }
-

@@ -1,7 +1,7 @@
 ;; Set default font
-(set-frame-font "Hack Nerd Font-9" nil t)
-(setq default-frame-alist '((font . "Hack Nerd Font-9")))
-(tooltip-mode -1)
+(set-frame-font "Hack Nerd Font Mono-9" nil t)
+(setq default-frame-alist '((font . "Hack Nerd Font Mono-9")))
+;; (tooltip-mode -1)
 
 ;; Make more room
 (menu-bar-mode -1)
@@ -90,7 +90,9 @@
      dired
      notmuch
      calc
-     (magit magit-repos magit-submodule))))
+     pass
+     (magit magit-repos magit-submodule)
+     calendar)))
 
 ;; Theme
 (use-package doom-themes
@@ -99,13 +101,15 @@
   ;; Global settings (defaults)
   (setq doom-themes-enable-bold t
 	doom-themes-enable-italic t)
-  (load-theme 'doom-palenight t)
   ;; Enable flashing mode-line on errors
   (doom-themes-visual-bell-config)
   ;; Corrects (and improves) org-mode's native fontification
   (doom-themes-org-config)
+  (load-theme 'doom-palenight t)
   (set-face-foreground 'mode-line "black")
   (set-face-background 'mode-line "DarkOliveGreen4"))
+  ;; (load-theme 'doom-nord-light t))
+  ;; (load-theme 'doom-moonlight t))
 
 (defun wrapper/format/systemd-run (command)
   "Format COMMAND with systemd-run"
@@ -165,11 +169,11 @@
 	      (,(kbd "<XF86MonBrightnessDown>") .
 	       (lambda ()
              (interactive)
-             (wrapper/scoped-run "brightnessctl --device 'amdgpu_bl0' set 5%-")))
+             (wrapper/scoped-run "brightnessctl --device 'amdgpu_bl1' set 5%-")))
 	      (,(kbd "<XF86MonBrightnessUp>") .
 	       (lambda ()
              (interactive)
-             (wrapper/scoped-run "brightnessctl --device 'amdgpu_bl0' set 5%+")))
+             (wrapper/scoped-run "brightnessctl --device 'amdgpu_bl1' set 5%+")))
 	      ;; Others
           ;; 's-l': Lock screen
           ([?\s-l] . (lambda ()
@@ -206,24 +210,26 @@
   ;; Startup tasks
   (add-hook 'exwm-init-hook
         (lambda ()
-          (wrapper/scoped-run "nm-applet")
-          (wrapper/scoped-run "blueman-applet")))
+          (wrapper/scoped-run "nm-applet")))
   ;; Enable the system tray
   (require 'exwm-systemtray)
   (setq exwm-systemtray-height 24) ;; default 22
   (exwm-systemtray-enable)
+  ;; Debug
+  ;; (setq exwm-debug t)
+  ;; (xcb:debug)
   ;; Using xim input
-  ;; (require 'exwm-xim)
-  ;; (exwm-xim-enable)
-  ;; (push ?\C-\\ exwm-input-prefix-keys)
+  (require 'exwm-xim)
+  (exwm-xim-enable)
+  (push ?\C-\\ exwm-input-prefix-keys)
   ;; Enable EXWM
   (exwm-enable))
 
-(use-package exwm-outer-gaps
-  :config
-  (exwm-outer-gaps-set-all 20 nil)
-  ;; Disable by default
-  (exwm-outer-gaps-mode -1))
+;; (use-package exwm-outer-gaps
+;;   :config
+;;   (exwm-outer-gaps-set-all 20 nil)
+;;   ;; Disable by default
+;;   (exwm-outer-gaps-mode -1))
 
 (use-package exwm-firefox
   :demand t
@@ -246,8 +252,9 @@
   ;; Increase maximum scrollback value
   (setq vterm-max-scrollback 3000)
   ;; Additional bindings
-  (evil-define-key '(normal insert) 'vterm-mode-map
-    (kbd "C-c C-q") 'vterm-send-next-key)
+  (with-eval-after-load 'evil-collection
+    (evil-collection-define-key '(normal insert emacs) 'vterm-mode-map
+      (kbd "C-c C-q") 'vterm-send-next-key))
   (defun nterm ()
     "Open a new vterm instance with a unique buffer name"
     (interactive)
@@ -283,9 +290,9 @@
 ;; LSP support
 (use-package eglot
   :hook
-  ;; ((nix-mode c-mode) . eglot-ensure)
-  ((nix-mode rust-mode c-mode scala-mode)
-   . eglot-ensure)
+  ;; FIXME: Removed rust-mode as rust-analyzer regularly crashes
+  ;; ((c-mode scala-mode) . eglot-ensure)
+  ((c-mode) . eglot-ensure)
   :config
   (add-to-list 'eglot-server-programs '(nix-mode . ("nil")))
   ;; Evil bindings
@@ -330,6 +337,13 @@
 (use-package scala-mode
   :mode "\\.scala\\'"
   :interpreter "scala")
+
+;; Dummy typst mode
+;; (progn
+;;   (define-derived-mode typst-mode
+;;     fundamental-mode "Typst"
+;;     "Dummy major mode for typst")
+;;   (add-to-list 'auto-mode-alist '("\\.typ\\'" . typst-mode)))
 
 ;; Org mode
 (use-package org
@@ -380,13 +394,97 @@
   (require 'org-crypt)
   (org-crypt-use-before-save-magic))
 
-;; Email indexing
+(use-package pass
+  :config
+  (auth-source-pass-enable)
+  (setq auth-sources '(password-store))
+  (setq auth-source-do-cache nil))
+
+;; Email indexing and configuration
 (use-package notmuch
   :demand t
   :load-path
   (lambda ()
     (shell-command-to-string
-     "readlink -f \"$(which notmuch-emacs-mua)/../../share/emacs/site-lisp/\" | tr -d '\n'")))
+     "readlink -f \"$(which notmuch-emacs-mua)/../../share/emacs/site-lisp/\" | tr -d '\n'"))
+  :config
+  (setq send-mail-function 'smtpmail-send-it
+        message-send-mail-function 'smtpmail-send-it
+        mail-from-style nil
+        user-full-name "Gongqi Huang"
+        user-mail-address "gh0477@cs.princeton.edu"
+        smtpmail-debug-info t
+        smtpmail-debug-verb t)
+
+  (defvar smtp-accounts
+    '(;; Princeton CS
+      (ssl                       ;; Protocol
+       "gh0477@cs.princeton.edu" ;; Address matched in From field
+       "smtp.cs.princeton.edu"   ;; SMTP server
+       587                       ;; SMTP port
+       "gh0477"                  ;; User
+       (auth-source-pass-get 'secret "cs.princeton.edu/passcode")) ;; Password
+      ))
+
+  (defun set-smtp (mech server port user password)
+    "Set related SMTP variables for supplied parameters."
+    (setq smtpmail-smtp-server server
+          smtpmail-smtp-service port
+          smtpmail-stream-type nil
+          smtpmail-auth-credentials (list (list server port user password))
+          smtpmail-auth-supported (list mech)
+          smtpmail-starttls-credentials nil)
+    (message "Setting SMTP server to `%s:%s' for user `%s'."
+             server port user))
+
+  (defun set-smtp-ssl (server port user password &optional key cert)
+    "Set related SMTP and SSL variables for supplied parameters."
+    (setq starttls-use-gnutls t
+          starttls-gnutls-program "gnutls-cli"
+          starttls-extra-arguments nil
+          smtpmail-smtp-server server
+          smtpmail-smtp-service port
+          smtpmail-smtp-user user
+          smtpmail-stream-type 'starttls
+          ;; No effect. Outdated?
+          ;; smtpmail-auth-credentials (list (list server port user password))
+          ;; smtpmail-starttls-credentials (list (list server port key cert))
+          )
+    (message
+     "Setting SMTP server to `%s:%s' for user `%s'. (SSL enabled.)"
+     server port user))
+
+  (defun change-smtp ()
+    "Change the SMTP server according to the current from line."
+    (save-excursion
+      (cl-loop with from = (save-restriction
+                             (message-narrow-to-headers)
+                             (message-fetch-field "from"))
+               for (auth-mech address . auth-spec) in smtp-accounts
+               when (string-match address from)
+               do (cond
+                   ((memq auth-mech '(cram-md5 plain login))
+                    (cl-return (apply 'set-smtp (cons auth-mech auth-spec))))
+                   ((eql auth-mech 'ssl)
+                    (cl-return (apply 'set-smtp-ssl auth-spec)))
+                   (t (error "Unrecognized SMTP auth. mechanism: `%s'." auth-mech)))
+               finally (error "Cannot infer SMTP information."))))
+
+  (defadvice smtpmail-via-smtp
+      (before smtpmail-via-smtp-ad-change-smtp (recipient smtpmail-text-buffer))
+    "Call `change-smtp' before every `smtpmail-via-smtp'."
+    (with-current-buffer smtpmail-text-buffer (change-smtp)))
+
+  (ad-activate 'smtpmail-via-smtp))
+
+;; Enable pinyin input method
+(use-package pyim
+  :config
+  (require 'pyim-basedict)
+  (pyim-basedict-enable)
+  (setq default-input-method "pyim")
+  (setq pyim-page-length 7))
+
 
 (custom-set-variables
  ;; custom-set-variables was added by Custom.

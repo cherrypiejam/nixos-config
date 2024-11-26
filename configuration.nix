@@ -79,7 +79,7 @@ in {
   boot.loader.efi.canTouchEfiVariables = true;
 
   # Kernel version
-  boot.kernelPackages = pkgs.linuxPackages_6_8;
+  # boot.kernelPackages = pkgs.linuxPackages_6_8;
 
   # Cross-compile images
   boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
@@ -96,6 +96,7 @@ in {
 
   # Set your time zone.
   time.timeZone = "America/New_York";
+  # time.timeZone = "US/Central";
 
   # Set font packages.
   fonts = {
@@ -201,7 +202,7 @@ in {
   };
 
   # Enable fingerprint reader
-  services.fprintd.enable = true;
+  services.fprintd.enable = false;
 
   # Enable multi-display
   services.autorandr.enable = true;
@@ -210,17 +211,24 @@ in {
   services.printing = {
     enable = true;
     drivers = with pkgs; [ hplipWithPlugin ];
-    # clientConf = ''
-    #   ServerName lpdrelay.cs.princeton.edu
-    #   User gh0477
-    # '';
   };
 
-  # Enable sound
-  sound.enable = true;
-  hardware.pulseaudio = {
+  # CUPS security issues
+  # https://discourse.nixos.org/t/cups-cups-filters-and-libppd-security-issues/52780
+  services.avahi.enable = false;
+
+  # Pulseaudio does not have great bluetooth support. Use Pipewire
+  # instead to enable sound.
+  sound.enable = false;
+  hardware.pulseaudio.enable = false;
+  # For user process realtime scheduling priority
+  security.rtkit.enable = true;
+  services.pipewire = {
     enable = true;
-    package = pkgs.pulseaudioFull;
+    alsa.enable = true;
+    alsa.support32Bit = true;
+    pulse.enable = true;
+    jack.enable = true;
   };
 
   # Enable bluetooth
@@ -271,6 +279,7 @@ in {
     notmuch.emacs
     zip
     unzip
+    alsa-utils
     # Service essentials
     networkmanagerapplet
     arandr
@@ -319,7 +328,15 @@ in {
     ];
   };
 
-  virtualisation.docker.enable = true;
+  # virtualisation.docker.enable = true;
+  virtualisation.containers.enable = true;
+  virtualisation.podman = {
+    enable = true;
+    # Drop-in replacement to docker
+    dockerCompat = true;
+    # Required for containers under podman-compose to be able to talk to each other
+    defaultNetwork.settings.dns_enabled = true;
+  };
 
   # Enable virtual box
   # virtualisation.virtualbox.host.enable = true;
@@ -416,10 +433,6 @@ in {
     enable = false;
     enableVirtualUsers = true;
     localUsers = true;
-    userDbPath = with pkgs; "${runCommand "vfstpd-userDb" {} ''
-       mkdir $out
-       ${db}/bin/db_load -T -t hash -f logins $out/userDb.db
-    ''}/userDb";
     localRoot = "/var/ftp";
     writeEnable = true;
     allowWriteableChroot = true;

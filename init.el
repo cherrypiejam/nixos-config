@@ -1,6 +1,6 @@
 ;; Set default font
-(set-frame-font "Hack Nerd Font Mono-9" nil t)
-(setq default-frame-alist '((font . "Hack Nerd Font Mono-9")))
+(set-frame-font "Hack Nerd Font Mono-10" nil t)
+(setq default-frame-alist '((font . "Hack Nerd Font Mono-10")))
 ;; (tooltip-mode -1)
 
 ;; Make more room
@@ -40,6 +40,15 @@
 ;; Line numbers
 (setq display-line-numbers-type 'relative)
 (global-display-line-numbers-mode)
+
+;; Helper functions
+(defun wrapper/format/systemd-run (command)
+  "Format COMMAND with systemd-run"
+  (format "systemd-run -q --user --slice=app.slice --scope -- %s" command))
+
+(defun wrapper/scoped-run (command)
+  "Run COMMAND with systemd-run"
+  (start-process-shell-command command nil (wrapper/format/systemd-run command)))
 
 ;; Ensure unique buffer names
 (require 'uniquify)
@@ -92,12 +101,55 @@
      calc
      pass
      (magit magit-repos magit-submodule)
-     calendar)))
+     calendar
+     image-dired)))
+
+(defun dark-mode ()
+  "Toggle between `doom-moonlight` (dark) and `doom-one-light` (light)."
+  (interactive)
+
+  (let ((is-dark (memq 'doom-moonlight custom-enabled-themes)))
+    ;; Disable themes. Continue if errors
+    (dolist (theme custom-enabled-themes)
+      (ignore-errors (disable-theme theme)))
+
+    ;; Load the new theme
+    (if is-dark
+        (progn
+          (load-theme 'doom-one-light t)
+          (let ((fg (face-foreground 'mode-line nil 'default))
+                (bg (face-background 'mode-line nil 'default)))
+            (when (and (stringp fg) (stringp bg))
+              (set-face-attribute 'mode-line nil
+                                  :foreground bg
+                                  :background fg)))
+          (when (gsettings-available?)
+            (gsettings-set-from-gvariant-string
+             "org.gnome.desktop.interface" "color-scheme" "prefer-light")))
+      (progn
+        (load-theme 'doom-moonlight t)
+        (set-face-attribute 'mode-line nil
+                            :foreground "black"
+                            :background "DarkOliveGreen4")
+
+        (when (gsettings-available?)
+          (gsettings-set-from-gvariant-string
+           "org.gnome.desktop.interface" "color-scheme" "prefer-dark"))))))
 
 ;; Theme
+(use-package gsettings)
 (use-package doom-themes
+  :after gsettings
   :ensure t
   :config
+  ;; Fix broken font after a theme change
+  (defun wrapper/reapply-font-after-theme (&rest _)
+    "Reapply the custom font after loading or enabling a theme."
+    (set-frame-font "Hack Nerd Font Mono-10" nil t)
+    (add-to-list 'default-frame-alist '(font . "Hack Nerd Font Mono-10"))
+    (message "Font reapplied after a theme change."))
+  (advice-add 'load-theme :after #'wrapper/reapply-font-after-theme)
+  (advice-add 'enable-theme :after #'wrapper/reapply-font-after-theme)
   ;; Global settings (defaults)
   (setq doom-themes-enable-bold t
 	doom-themes-enable-italic t)
@@ -105,19 +157,15 @@
   (doom-themes-visual-bell-config)
   ;; Corrects (and improves) org-mode's native fontification
   (doom-themes-org-config)
-  (load-theme 'doom-palenight t)
-  (set-face-foreground 'mode-line "black")
-  (set-face-background 'mode-line "DarkOliveGreen4"))
-  ;; (load-theme 'doom-nord-light t))
-  ;; (load-theme 'doom-moonlight t))
 
-(defun wrapper/format/systemd-run (command)
-  "Format COMMAND with systemd-run"
-  (format "systemd-run -q --user --slice=app.slice --scope -- %s" command))
-
-(defun wrapper/scoped-run (command)
-  "Run COMMAND with systemd-run"
-  (start-process-shell-command command nil (wrapper/format/systemd-run command)))
+  ;; Toggle dark mode on startup
+  (dark-mode)
+  ;; (load-theme 'doom-one-light t)
+  ;; (load-theme 'doom-moonlight t)
+  ;; (load-theme 'doom-palenight t)
+  ;; (set-face-foreground 'mode-line "black")
+  ;; (set-face-background 'mode-line "DarkOliveGreen4")
+  ) ;; End of Theme
 
 ;; Window manager
 (use-package exwm
@@ -178,7 +226,10 @@
           ;; 's-l': Lock screen
           ([?\s-l] . (lambda ()
                        (interactive)
-                       (wrapper/scoped-run "xautolock -locknow")))))
+                       (wrapper/scoped-run
+                        ;; "xautolock -locknow"
+                        "systemctl suspend"
+                        )))))
   ;; Line-editing shortcuts
   (setq exwm-input-simulation-keys
         '(([?\C-b] . [left])
@@ -205,22 +256,23 @@
         (lambda ()
           (wrapper/scoped-run "autorandr --change --force")
           (message "Display config changed")))
-  (setq exwm-randr-workspace-monitor-plist '(2 "DP-3" 3 "DP-4"))
-  (exwm-randr-enable)
+  ;; (setq exwm-randr-workspace-monitor-plist '(2 "DP-3" 3 "DP-4"))
+  (setq exwm-randr-workspace-monitor-plist '())
+  (exwm-randr-mode 1)
   ;; Startup tasks
   (add-hook 'exwm-init-hook
         (lambda ()
           (wrapper/scoped-run "nm-applet")))
   ;; Enable the system tray
   (require 'exwm-systemtray)
-  (setq exwm-systemtray-height 24) ;; default 22
-  (exwm-systemtray-enable)
+  (setq exwm-systemtray-height 22) ;; default 22
+  (exwm-systemtray-mode 1)
   ;; Debug
   ;; (setq exwm-debug t)
   ;; (xcb:debug)
-  ;; Using xim input
-  (require 'exwm-xim)
-  (exwm-xim-enable)
+  ;; Using xim input (FIXME: Enabling XIM freezes emacs)
+  ;; (require 'exwm-xim)
+  ;; (exwm-xim-mode 1)
   (push ?\C-\\ exwm-input-prefix-keys)
   ;; Enable EXWM
   (exwm-enable))
@@ -256,12 +308,16 @@
     (evil-collection-define-key '(normal insert emacs) 'vterm-mode-map
       (kbd "C-c C-q") 'vterm-send-next-key))
   (defun nterm ()
-    "Open a new vterm instance with a unique buffer name"
+    "Instantiate a new vterm instance with a unique buffer name"
     (interactive)
     (let ((counter 0))
       (while (get-buffer (format "%s<%d>" vterm-buffer-name counter))
         (setq counter (1+ counter)))
-      (vterm (format "%s<%d>" vterm-buffer-name counter)))))
+      (vterm (format "%s<%d>" vterm-buffer-name counter))))
+  (defun kterm (k)
+    "Instantiate k vterm instance(s)"
+    (interactive "nNumber of vterm instances: ")
+    (dotimes (_ k) (nterm))))
 
 ;; Ivy mode
 (use-package ivy
@@ -338,12 +394,21 @@
   :mode "\\.scala\\'"
   :interpreter "scala")
 
-;; Dummy typst mode
-;; (progn
-;;   (define-derived-mode typst-mode
-;;     fundamental-mode "Typst"
-;;     "Dummy major mode for typst")
-;;   (add-to-list 'auto-mode-alist '("\\.typ\\'" . typst-mode)))
+;; Haskell mode
+(use-package haskell-mode
+  :mode "\\.hs$")
+
+;; Typst mode
+(use-package typst-ts-mode
+  :mode "\\.typ$"
+  :custom
+  (typst-ts-mode-enable-raw-blocks-highlight t))
+
+;; Agda mode
+(use-package agda2-mode
+  ;; :hook
+  ;; (deactivate-input-method)
+  :mode "\\.agda$")
 
 ;; Org mode
 (use-package org
@@ -363,7 +428,8 @@
    'org-babel-load-languages
    '((C      . t)
      (python . t)
-     (emacs-lisp . t))))
+     (emacs-lisp . t)
+     (lilypond . t))))
 
 ;; (use-package evil-org
 ;;   :after org
@@ -424,6 +490,13 @@
        587                       ;; SMTP port
        "gh0477"                  ;; User
        (auth-source-pass-get 'secret "cs.princeton.edu/passcode")) ;; Password
+      ;; Personal
+      (ssl
+       "gongqi@thuh.zone"
+       "mail.gongqi.zone"
+       587
+       "gongqi@thuh.zone"
+       (auth-source-pass-get 'secret "thuh.zone/gongqi"))
       ))
 
   (defun set-smtp (mech server port user password)
@@ -485,6 +558,12 @@
   (setq default-input-method "pyim")
   (setq pyim-page-length 7))
 
+;; LilyPond mode
+(progn
+  (autoload 'LilyPond-mode "lilypond-mode")
+  (setq auto-mode-alist
+        (cons '("\\.ly$" . LilyPond-mode) auto-mode-alist))
+  (add-hook 'LilyPond-mode-hook (lambda () (turn-on-font-lock))))
 
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
@@ -492,6 +571,10 @@
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(auth-source-save-behavior nil)
+ '(custom-safe-themes
+   '("5f128efd37c6a87cd4ad8e8b7f2afaba425425524a68133ac0efd87291d05874"
+     "60ada0ff6b91687f1a04cc17ad04119e59a7542644c7c59fc135909499400ab8"
+     default))
  '(package-selected-packages '(doom-themes exwm vterm use-package evil))
  '(warning-suppress-log-types '(((undo discard-info)))))
 (custom-set-faces
